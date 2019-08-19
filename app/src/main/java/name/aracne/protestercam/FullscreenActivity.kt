@@ -9,7 +9,6 @@ import android.util.Log
 import android.util.Rational
 import android.util.Size
 import android.view.Surface
-import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
@@ -61,6 +60,9 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         false
     }
 
+    private var lensFacing = CameraX.LensFacing.FRONT
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -77,18 +79,18 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         // while interacting with the UI.
         //dummy_button.setOnTouchListener(mDelayHideTouchListener)
 
-        viewFinder = findViewById(R.id.view_finder)
+        switch_button.setOnClickListener { toggleCameraLensFacing() }
 
         // Request camera permissions
         if (allPermissionsGranted()) {
-            viewFinder.post { startCamera() }
+            view_finder.post { startCamera() }
         } else {
             ActivityCompat.requestPermissions(
                 this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
         }
 
         // Every time the provided texture view changes, recompute layout
-        viewFinder.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        view_finder.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateTransform()
         }
     }
@@ -142,13 +144,12 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         mHideHandler.postDelayed(mHideRunnable, delayMillis.toLong())
     }
 
-    private lateinit var viewFinder: TextureView
-
     private fun startCamera() {
         // Create configuration object for the viewfinder use case
         val previewConfig = PreviewConfig.Builder().apply {
             setTargetAspectRatio(Rational(16, 9))
             setTargetResolution(Size(1280, 720))
+            setLensFacing(lensFacing)
         }.build()
 
         // Build the viewfinder use case
@@ -157,11 +158,11 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         // Every time the viewfinder is updated, recompute layout
         preview.setOnPreviewOutputUpdateListener {
             // To update the SurfaceTexture, we have to remove it and re-add it
-            val parent = viewFinder.parent as ViewGroup
-            parent.removeView(viewFinder)
-            parent.addView(viewFinder, 0)
+            val parent = view_finder.parent as ViewGroup
+            parent.removeView(view_finder)
+            parent.addView(view_finder, 0)
 
-            viewFinder.surfaceTexture = it.surfaceTexture
+            view_finder.surfaceTexture = it.surfaceTexture
             updateTransform()
         }
 
@@ -175,6 +176,7 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
                 // select a capture mode which will infer the appropriate
                 // resolution based on aspect ration and requested mode
                 setCaptureMode(ImageCapture.CaptureMode.MIN_LATENCY)
+                setLensFacing(lensFacing)
             }.build()
 
         // Build the image capture use case and attach button click listener
@@ -213,11 +215,11 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         val matrix = Matrix()
 
         // Compute the center of the view finder
-        val centerX = viewFinder.width / 2f
-        val centerY = viewFinder.height / 2f
+        val centerX = view_finder.width / 2f
+        val centerY = view_finder.height / 2f
 
         // Correct preview output to account for display rotation
-        val rotationDegrees = when(viewFinder.display.rotation) {
+        val rotationDegrees = when(view_finder.display.rotation) {
             Surface.ROTATION_0 -> 0
             Surface.ROTATION_90 -> 90
             Surface.ROTATION_180 -> 180
@@ -227,7 +229,23 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         matrix.postRotate(-rotationDegrees.toFloat(), centerX, centerY)
 
         // Finally, apply transformations to our TextureView
-        viewFinder.setTransform(matrix)
+        view_finder.setTransform(matrix)
+    }
+
+    private fun toggleCameraLensFacing() {
+        val newLensFacing = if (CameraX.LensFacing.FRONT == lensFacing) {
+            CameraX.LensFacing.BACK
+        } else {
+            CameraX.LensFacing.FRONT
+        }
+        if (CameraX.hasCameraWithLensFacing(newLensFacing)) {
+            lensFacing = newLensFacing
+
+            view_finder.post {
+                CameraX.unbindAll()
+                startCamera()
+            }
+        }
     }
 
     /**
@@ -238,7 +256,7 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         if (requestCode == REQUEST_CODE_PERMISSIONS) {
             if (allPermissionsGranted()) {
-                viewFinder.post { startCamera() }
+                view_finder.post { startCamera() }
             } else {
                 Toast.makeText(this,
                     "Permissions not granted by the user.",
