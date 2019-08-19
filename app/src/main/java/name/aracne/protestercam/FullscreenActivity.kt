@@ -1,6 +1,9 @@
 package name.aracne.protestercam
 
 import android.Manifest
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ObjectAnimator
 import android.content.pm.PackageManager
 import android.graphics.Matrix
 import android.os.Bundle
@@ -195,9 +198,8 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
                     }
 
                     override fun onImageSaved(file: File) {
-                        val msg = "Photo capture succeeded: ${file.absolutePath}"
-                        Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
-                        Log.d("CameraXApp", msg)
+                        confirmShoot()
+                        Log.d("CameraXApp", "Photo capture succeeded: ${file.absolutePath}")
                     }
                 })
         }
@@ -244,6 +246,23 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
             view_finder.post {
                 CameraX.unbindAll()
                 startCamera()
+            }
+        }
+    }
+
+    private fun confirmShoot() {
+        shoot_confirmation.post {
+            ObjectAnimator.ofFloat(shoot_confirmation, View.ALPHA, 0f, 1f, 0.66f, 0.33f, 0f).apply {
+                duration = 200
+                addListener(object: AnimatorListenerAdapter() {
+                    override fun onAnimationStart(animation: Animator?) {
+                        shoot_confirmation.visibility = View.VISIBLE
+                    }
+                    override fun onAnimationEnd(animation: Animator?) {
+                        shoot_confirmation.visibility = View.INVISIBLE
+                    }
+                })
+                start()
             }
         }
     }
