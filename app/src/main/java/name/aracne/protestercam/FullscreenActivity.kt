@@ -6,15 +6,13 @@ import android.animation.AnimatorListenerAdapter
 import android.animation.ObjectAnimator
 import android.content.pm.PackageManager
 import android.graphics.Matrix
-import android.os.Bundle
-import android.os.Handler
+import android.os.*
 import android.util.Log
 import android.util.Rational
 import android.util.Size
 import android.view.Surface
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageButton
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
@@ -64,6 +62,8 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
     }
 
     private var lensFacing = CameraX.LensFacing.FRONT
+
+    private var isRecording = false
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -148,9 +148,13 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
     }
 
     private fun startCamera() {
+        val aspectRatioPreview = Rational(view_finder.height, view_finder.width)
+        val aspectRatio169 = Rational(16, 9)
+
+
         // Create configuration object for the viewfinder use case
         val previewConfig = PreviewConfig.Builder().apply {
-            setTargetAspectRatio(Rational(16, 9))
+            setTargetAspectRatio(aspectRatioPreview)
             setTargetResolution(Size(1280, 720))
             setLensFacing(lensFacing)
         }.build()
@@ -170,11 +174,10 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         }
 
 
-
         // Create configuration object for the image capture use case
         val imageCaptureConfig = ImageCaptureConfig.Builder()
             .apply {
-                setTargetAspectRatio(Rational(16, 9))
+                setTargetAspectRatio(aspectRatio169)
                 // We don't set a resolution for image capture; instead, we
                 // select a capture mode which will infer the appropriate
                 // resolution based on aspect ration and requested mode
@@ -184,9 +187,8 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
 
         // Build the image capture use case and attach button click listener
         val imageCapture = ImageCapture(imageCaptureConfig)
-        findViewById<ImageButton>(R.id.capture_button).setOnClickListener {
-            val file = File(externalMediaDirs.first(),
-                "${System.currentTimeMillis()}.jpg")
+        capture_button.setOnClickListener {
+            val file = File(externalMediaDirs.first(), "${System.currentTimeMillis()}.jpg")
             imageCapture.takePicture(file,
                 object : ImageCapture.OnImageSavedListener {
                     override fun onError(error: ImageCapture.UseCaseError,
@@ -205,12 +207,44 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         }
 
 
+        val videoCaptureConfig = VideoCaptureConfig.Builder().apply {
+            setLensFacing(lensFacing)
+            setTargetAspectRatio(aspectRatio169)
+            setTargetRotation(view_finder.display.rotation)
+        }.build()
+
+        val videoCapture = VideoCapture(videoCaptureConfig)
+        capture_button.setOnLongClickListener {
+            val file = File(externalMediaDirs.first(), "${System.currentTimeMillis()}.mp4")
+            if (isRecording) {
+                videoCapture.stopRecording()
+                isRecording = false
+                buzz(success = true)
+            } else {
+                videoCapture.startRecording(file,
+                    object : VideoCapture.OnVideoSavedListener {
+                        override fun onVideoSaved(file: File) {
+                            Log.d("CameraXApp", "Video capture succeeded: ${file.absolutePath}")
+                            isRecording = false
+                            buzz(success = true)
+                        }
+                        override fun onError(useCaseError: VideoCapture.UseCaseError?, message: String?, cause: Throwable?) {
+                            Log.d("CameraXApp", "Video capture failed: $message")
+                            isRecording = false
+                            buzz(success = false)
+                        }
+                    })
+                isRecording = true
+            }
+            true
+        }
+
 
         // Bind use cases to lifecycle
         // If Android Studio complains about "this" being not a LifecycleOwner
         // try rebuilding the project or updating the appcompat dependency to
         // version 1.1.0 or higher.
-        CameraX.bindToLifecycle(this, preview, imageCapture)
+        CameraX.bindToLifecycle(this, preview, imageCapture, videoCapture)
     }
 
     private fun updateTransform() {
@@ -267,6 +301,21 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         }
     }
 
+    private fun buzz(success: Boolean) {
+        val pattern = if (success) {
+            longArrayOf(0L, 150L, 100L)
+        } else {
+            longArrayOf(0L, 150L, 100L, 150L, 100L, 150L, 100L)
+        }
+        (getSystemService(VIBRATOR_SERVICE) as Vibrator?)?.apply {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrate(VibrationEffect.createWaveform(pattern, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                vibrate(pattern, -1)
+            }
+        }
+    }
+
     /**
      * Process result from permission request dialog box, has the request
      * been granted? If yes, start Camera. Otherwise display a toast
@@ -315,6 +364,6 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         private const val REQUEST_CODE_PERMISSIONS = 10
 
         // This is an array of all the permission specified in the manifest
-        private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
+        private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
     }
 }
