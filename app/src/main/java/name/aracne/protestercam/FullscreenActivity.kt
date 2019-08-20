@@ -6,6 +6,7 @@ import android.animation.AnimatorListenerAdapter
 import android.animation.ObjectAnimator
 import android.content.pm.PackageManager
 import android.graphics.Matrix
+import android.graphics.Point
 import android.os.*
 import android.util.Log
 import android.util.Rational
@@ -263,6 +264,10 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
             else -> return
         }
         matrix.postRotate(-rotationDegrees.toFloat(), centerX, centerY)
+
+        val size = Point()
+        view_finder.display.getSize(size)
+        matrix.setScale(size.x.toFloat() / view_finder.width, size.y.toFloat() / view_finder.height)
 
         // Finally, apply transformations to our TextureView
         view_finder.setTransform(matrix)
