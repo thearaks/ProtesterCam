@@ -1,4 +1,4 @@
-# Protester Cam
+# Protester Camera
 ### A protester tool for capturing footage disguised as a selfie-taking app
 
 [![Current Release](https://img.shields.io/github/release/thearaks/ProtesterCam.svg?maxAge=21600 "Current Release")](https://github.com/thearaks/ProtesterCam/releases/latest)
