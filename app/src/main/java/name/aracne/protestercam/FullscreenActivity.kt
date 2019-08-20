@@ -6,7 +6,6 @@ import android.animation.AnimatorListenerAdapter
 import android.animation.ObjectAnimator
 import android.content.pm.PackageManager
 import android.graphics.Matrix
-import android.graphics.Point
 import android.os.*
 import android.util.Log
 import android.util.Rational
@@ -149,15 +148,15 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
     }
 
     private fun startCamera() {
-        val aspectRatioPreview = Rational(view_finder.height, view_finder.width)
         val aspectRatio169 = Rational(16, 9)
 
 
         // Create configuration object for the viewfinder use case
         val previewConfig = PreviewConfig.Builder().apply {
-            setTargetAspectRatio(aspectRatioPreview)
+            setTargetAspectRatio(aspectRatio169)
             setTargetResolution(Size(1280, 720))
             setLensFacing(lensFacing)
+            setTargetRotation(view_finder.display.rotation)
         }.build()
 
         // Build the viewfinder use case
@@ -209,9 +208,10 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
 
 
         val videoCaptureConfig = VideoCaptureConfig.Builder().apply {
-            setLensFacing(lensFacing)
             setTargetAspectRatio(aspectRatio169)
-            setTargetRotation(view_finder.display.rotation)
+            setTargetResolution(Size(1280, 720))
+            setLensFacing(lensFacing)
+            //setTargetRotation(view_finder.display.rotation)
         }.build()
 
         val videoCapture = VideoCapture(videoCaptureConfig)
@@ -265,9 +265,14 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         }
         matrix.postRotate(-rotationDegrees.toFloat(), centerX, centerY)
 
-        val size = Point()
+        when (view_finder.display.rotation) {
+            Surface.ROTATION_90, Surface.ROTATION_270 -> matrix.postScale(16f / 9, 9f / 16, centerX, centerY)
+        }
+
+        /*val size = Point()
         view_finder.display.getSize(size)
-        matrix.setScale(size.x.toFloat() / view_finder.width, size.y.toFloat() / view_finder.height)
+        val minScale = min(view_finder.width / size.x.toFloat(), view_finder.height / size.y.toFloat())
+        matrix.postScale(minScale, minScale, centerX, centerY)*/
 
         // Finally, apply transformations to our TextureView
         view_finder.setTransform(matrix)

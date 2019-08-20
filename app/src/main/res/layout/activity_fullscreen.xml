@@ -15,18 +15,6 @@
         android:keepScreenOn="true"
         tools:background="@android:color/black" />
 
-    <ImageButton
-        style="@style/Widget.AppCompat.Button.Borderless"
-        android:id="@+id/capture_button"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_margin="24dp"
-        android:padding="0dp"
-        app:srcCompat="@drawable/ic_capture"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
-
     <View
         android:id="@+id/shoot_confirmation"
         android:layout_width="match_parent"
@@ -36,17 +24,28 @@
 
     <ImageButton
         style="@style/Widget.AppCompat.Button.Borderless"
+        android:id="@+id/capture_button"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_margin="24dp"
+        android:padding="0dp"
+        app:srcCompat="@drawable/ic_capture"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+    <ImageButton
+        style="@style/Widget.AppCompat.Button.Borderless"
         android:id="@+id/switch_button"
         android:layout_width="24dp"
         android:layout_height="24dp"
         android:layout_margin="24dp"
         android:padding="0dp"
-        android:rotation="90"
         app:srcCompat="@drawable/ic_switch_camera_white_24dp"
-        app:layout_constraintHorizontal_bias="0.9"
-        app:layout_constraintTop_toTopOf="@id/capture_button"
-        app:layout_constraintBottom_toBottomOf="@id/capture_button"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+        app:layout_constraintVertical_bias="0.1"
+        app:layout_constraintStart_toStartOf="@id/capture_button"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintEnd_toEndOf="@id/capture_button"
+        app:layout_constraintBottom_toBottomOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
