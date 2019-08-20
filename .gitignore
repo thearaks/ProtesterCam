@@ -1,6 +1,7 @@
 # built application files
 *.apk
 *.ap_
+*.aab
 
 # files for the dex VM
 *.dex
@@ -47,3 +48,6 @@ build
 # remove # and delete .idea if it better suit your needs.
 .idea/*
 !.idea/runConfigurations
+
+# Android Keystore
+keystore/*
