@@ -220,7 +220,6 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
             if (isRecording) {
                 videoCapture.stopRecording()
                 isRecording = false
-                buzz(success = true)
             } else {
                 videoCapture.startRecording(file,
                     object : VideoCapture.OnVideoSavedListener {
@@ -236,6 +235,7 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
                         }
                     })
                 isRecording = true
+                buzz(success = true)
             }
             true
         }
