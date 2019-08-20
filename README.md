@@ -3,7 +3,7 @@
 
 [![Current Release](https://img.shields.io/github/release/thearaks/ProtesterCam.svg?maxAge=21600 "Current Release")](https://github.com/thearaks/ProtesterCam/releases/latest)
 [![License](https://img.shields.io/github/license/thearaks/ProtesterCam.svg?maxAge=2592000 "License")](LICENSE.md)
-[![Donate](https://img.shields.io/liberapay/receives/thearaks.svg "Donate")](https://liberapay.com/thearaks/donate)
+[![Donate](https://img.shields.io/beerpay/thearaks/ProtesterCam.svg "Donate")](https://beerpay.io/thearaks/ProtesterCam)
 [![Donate](https://img.shields.io/liberapay/patrons/thearaks.svg "Donate")](https://liberapay.com/thearaks/donate)
 
 ## Table of Contents
@@ -15,7 +15,7 @@
 - [Donating](#donating)
 
 ## Introduction
-The idea behind this project spawns from [this video of repubblica.it](https://video.repubblica.it/dossier/scandalo-lega/salvini-e-la-catena-di-montaggio-dei-selfie-e-il-ministro-che-scatta-ogni-foto/341864/342454) where the new anti-protester strategy of the italian Ministry of the Interior is explained: to avoid [criticisms](https://video.repubblica.it/edizione/bari/in-puglia-salvini-sorpreso-da-un-nuovo-selfie-beffa-non-siamo-piu-terroni-di-m/335167/335768) from fake fans that asks for selfies the politic grabs the phone from the owner and takes the picture only when he has verified that the person is not a threat.
+The idea behind this project spawns from [this video of repubblica.it](https://video.repubblica.it/dossier/scandalo-lega/salvini-e-la-catena-di-montaggio-dei-selfie-e-il-ministro-che-scatta-ogni-foto/341864/342454) where the new anti-protester strategy of the italian Ministry of the Interior is explained: to avoid [criticisms](https://video.repubblica.it/edizione/bari/in-puglia-salvini-sorpreso-da-un-nuovo-selfie-beffa-non-siamo-piu-terroni-di-m/335167/335768) from fake fans that asks for selfies the politic grabs the phone from the owner and takes the picture himself only when he has verified that the person is not a threat.
 
 This leads to a distorted perception of reality in which a politic has no dissention or opposition.
 These biased contents are then spread through social media to put in place fanbase growth hacking strategies and to divert the audience attention from the real problems of a nation.
@@ -41,7 +41,8 @@ Please use GitHub [issues feature](https://github.com/thearaks/ProtesterCam/issu
 
 ## Donating
 If you like this project and want to support its development:
-- Donate in EUR or USD [via Liberapay](https://liberapay.com/thearaks/donate)
+- Buy me a beer [via Beerpay](https://beerpay.io/thearaks/ProtesterCam)
+- Set up a recurring donation in EUR or USD [via Liberapay](https://liberapay.com/thearaks/donate)
 - If you use Brave Browser tip me in BAT!
     - If you don't use Brave Browser [learn more & try it](https://brave.com/onm771)!
 
