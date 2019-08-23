@@ -219,23 +219,23 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
             val file = File(externalMediaDirs.first(), "${System.currentTimeMillis()}.mp4")
             if (isRecording) {
                 videoCapture.stopRecording()
-                isRecording = false
+                recEnd()
             } else {
                 videoCapture.startRecording(file,
                     object : VideoCapture.OnVideoSavedListener {
                         override fun onVideoSaved(file: File) {
                             Log.d("CameraXApp", "Video capture succeeded: ${file.absolutePath}")
-                            isRecording = false
+                            recEnd()
                             buzz(success = true)
                         }
                         override fun onError(useCaseError: VideoCapture.UseCaseError?, message: String?, cause: Throwable?) {
                             Log.d("CameraXApp", "Video capture failed: $message")
-                            isRecording = false
+                            recEnd()
                             buzz(success = false)
                         }
                     })
                 isRecording = true
-                buzz(success = true)
+                recStart()
             }
             true
         }
@@ -309,6 +309,18 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
                 start()
             }
         }
+    }
+
+    private fun recStart() {
+        isRecording = true
+        switch_button.isEnabled = false
+        switch_button.alpha = 0.5f
+    }
+
+    private fun recEnd() {
+        isRecording = false
+        switch_button.isEnabled = true
+        switch_button.alpha = 1f
     }
 
     private fun buzz(success: Boolean) {

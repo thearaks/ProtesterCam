@@ -33,9 +33,6 @@ Thumbs.db
 # Sandbox stuff
 _sandbox
 
-# Gradle wrapper
-gradle/wrapper/*
-
 # Gradle cache
 .gradle
 
