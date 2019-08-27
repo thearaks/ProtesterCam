@@ -15,7 +15,7 @@
 
             <item>
                 <shape android:shape="oval">
-                    <solid android:color="#FFBB0000" />
+                    <solid android:color="#FFCCCCCC" />
                     <stroke android:color="#00000000" android:width="8dp" />
                 </shape>
             </item>
@@ -38,7 +38,7 @@
 
             <item>
                 <shape android:shape="oval">
-                    <solid android:color="#FFFF0000" />
+                    <solid android:color="#FFFFFFFF" />
                     <stroke android:color="#00000000" android:width="8dp" />
                 </shape>
             </item>
