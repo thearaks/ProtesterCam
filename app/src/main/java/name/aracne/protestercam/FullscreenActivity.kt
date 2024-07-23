@@ -4,29 +4,83 @@ import android.Manifest
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ObjectAnimator
+import android.content.ContentValues
 import android.content.pm.PackageManager
-import android.graphics.Matrix
-import android.os.*
+import android.icu.text.SimpleDateFormat
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.provider.MediaStore
 import android.util.Log
-import android.util.Rational
-import android.util.Size
-import android.view.Surface
 import android.view.View
-import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.*
-import androidx.core.app.ActivityCompat
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.FallbackStrategy
+import androidx.camera.video.MediaStoreOutputOptions
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
+import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
 import androidx.core.content.ContextCompat
+import androidx.core.content.PermissionChecker
 import androidx.lifecycle.LifecycleOwner
-import kotlinx.android.synthetic.main.activity_fullscreen.*
-import java.io.File
+import name.aracne.protestercam.databinding.ActivityFullscreenBinding
+import java.util.Locale
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * An example full-screen activity that shows and hides the system UI (i.e.
  * status bar and navigation/system bar) with user interaction.
  */
 class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
+
+    private lateinit var binding: ActivityFullscreenBinding
+
+    private val imageCapture: ImageCapture = ImageCapture.Builder().build()
+    private val videoCapture: VideoCapture<Recorder> = VideoCapture.withOutput(Recorder.Builder().build())
+    private var recording: Recording? = null
+    private var lensFacing = CameraSelector.LENS_FACING_FRONT
+    private val cameraSelector: CameraSelector
+        get() = CameraSelector.Builder().requireLensFacing(lensFacing).build()
+    private val preview: Preview
+        get() = Preview.Builder()
+            .build()
+            .also {
+                it.setSurfaceProvider(binding.viewFinder.surfaceProvider)
+            }
+    private lateinit var cameraExecutor: ExecutorService
+    private var cameraProvider: ProcessCameraProvider? = null
+
+    private val activityResultLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions())
+        { permissions ->
+            // Handle Permission granted/rejected
+            var permissionGranted = true
+            permissions.entries.forEach {
+                if (it.key in REQUIRED_PERMISSIONS && !it.value)
+                    permissionGranted = false
+            }
+            if (!permissionGranted) {
+                Toast.makeText(baseContext,
+                    "Permission request denied",
+                    Toast.LENGTH_SHORT).show()
+            } else {
+                binding.viewFinder.post { startCamera() }
+            }
+        }
+
     private val mHideHandler = Handler()
     private val mHidePart2Runnable = Runnable {
         // Delayed removal of status and navigation bar
@@ -34,7 +88,7 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         // Note that some of these constants are new as of API 16 (Jelly Bean)
         // and API 19 (KitKat). It is safe to use them, as they are inlined
         // at compile-time and do nothing on earlier devices.
-        view_finder.systemUiVisibility =
+        binding.viewFinder.systemUiVisibility =
             View.SYSTEM_UI_FLAG_LOW_PROFILE or
                     View.SYSTEM_UI_FLAG_FULLSCREEN or
                     View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
@@ -61,16 +115,20 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         false
     }
 
-    private var lensFacing = CameraX.LensFacing.FRONT
-
-    private var isRecording = false
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        setContentView(R.layout.activity_fullscreen)
+        binding = ActivityFullscreenBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
+
+        binding.captureButton.setOnClickListener { takePhoto() }
+        binding.captureButton.setOnLongClickListener {
+            captureVideo()
+            true
+        }
 
         mVisible = true
 
@@ -82,20 +140,16 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         // while interacting with the UI.
         //dummy_button.setOnTouchListener(mDelayHideTouchListener)
 
-        switch_button.setOnClickListener { toggleCameraLensFacing() }
+        binding.switchButton.setOnClickListener { toggleCameraLensFacing() }
 
         // Request camera permissions
         if (allPermissionsGranted()) {
-            view_finder.post { startCamera() }
+            binding.viewFinder.post { startCamera() }
         } else {
-            ActivityCompat.requestPermissions(
-                this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
+            activityResultLauncher.launch(REQUIRED_PERMISSIONS)
         }
 
-        // Every time the provided texture view changes, recompute layout
-        view_finder.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            updateTransform()
-        }
+        cameraExecutor = Executors.newSingleThreadExecutor()
     }
 
     override fun onPostCreate(savedInstanceState: Bundle?) {
@@ -128,9 +182,8 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
 
     private fun show() {
         // Show the system bar
-        view_finder.systemUiVisibility =
-            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        binding.viewFinder.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
         mVisible = true
 
         // Schedule a runnable to display UI elements after a delay
@@ -148,162 +201,173 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
     }
 
     private fun startCamera() {
-        val aspectRatio169 = Rational(16, 9)
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
+        cameraProviderFuture.addListener({
+            cameraProvider = cameraProviderFuture.get()
 
-        // Create configuration object for the viewfinder use case
-        val previewConfig = PreviewConfig.Builder().apply {
-            setTargetAspectRatio(aspectRatio169)
-            setTargetResolution(Size(1280, 720))
-            setLensFacing(lensFacing)
-            setTargetRotation(view_finder.display.rotation)
-        }.build()
+            try {
+                // Unbind use cases before rebinding
+                cameraProvider?.unbindAll()
 
-        // Build the viewfinder use case
-        val preview = Preview(previewConfig)
+                // Bind use cases to camera
+                cameraProvider?.bindToLifecycle(
+                    this, cameraSelector, preview, imageCapture, videoCapture)
 
-        // Every time the viewfinder is updated, recompute layout
-        preview.setOnPreviewOutputUpdateListener {
-            // To update the SurfaceTexture, we have to remove it and re-add it
-            val parent = view_finder.parent as ViewGroup
-            parent.removeView(view_finder)
-            parent.addView(view_finder, 0)
-
-            view_finder.surfaceTexture = it.surfaceTexture
-            updateTransform()
-        }
-
-
-        // Create configuration object for the image capture use case
-        val imageCaptureConfig = ImageCaptureConfig.Builder()
-            .apply {
-                setTargetAspectRatio(aspectRatio169)
-                // We don't set a resolution for image capture; instead, we
-                // select a capture mode which will infer the appropriate
-                // resolution based on aspect ration and requested mode
-                setCaptureMode(ImageCapture.CaptureMode.MIN_LATENCY)
-                setLensFacing(lensFacing)
-            }.build()
-
-        // Build the image capture use case and attach button click listener
-        val imageCapture = ImageCapture(imageCaptureConfig)
-        capture_button.setOnClickListener {
-            val file = File(externalMediaDirs.first(), "${System.currentTimeMillis()}.jpg")
-            imageCapture.takePicture(file,
-                object : ImageCapture.OnImageSavedListener {
-                    override fun onError(error: ImageCapture.UseCaseError,
-                                         message: String, exc: Throwable?) {
-                        val msg = "Photo capture failed: $message"
-                        Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
-                        Log.e("CameraXApp", msg)
-                        exc?.printStackTrace()
-                    }
-
-                    override fun onImageSaved(file: File) {
-                        confirmShoot()
-                        Log.d("CameraXApp", "Photo capture succeeded: ${file.absolutePath}")
-                    }
-                })
-        }
-
-
-        val videoCaptureConfig = VideoCaptureConfig.Builder().apply {
-            setTargetAspectRatio(aspectRatio169)
-            setTargetResolution(Size(1280, 720))
-            setLensFacing(lensFacing)
-            //setTargetRotation(view_finder.display.rotation)
-        }.build()
-
-        val videoCapture = VideoCapture(videoCaptureConfig)
-        capture_button.setOnLongClickListener {
-            val file = File(externalMediaDirs.first(), "${System.currentTimeMillis()}.mp4")
-            if (isRecording) {
-                videoCapture.stopRecording()
-                recEnd()
-            } else {
-                videoCapture.startRecording(file,
-                    object : VideoCapture.OnVideoSavedListener {
-                        override fun onVideoSaved(file: File) {
-                            Log.d("CameraXApp", "Video capture succeeded: ${file.absolutePath}")
-                            recEnd()
-                            buzz(success = true)
-                        }
-                        override fun onError(useCaseError: VideoCapture.UseCaseError?, message: String?, cause: Throwable?) {
-                            Log.d("CameraXApp", "Video capture failed: $message")
-                            recEnd()
-                            buzz(success = false)
-                        }
-                    })
-                isRecording = true
-                recStart()
+            } catch(exc: Exception) {
+                Log.e(TAG, "Use case binding failed", exc)
             }
-            true
-        }
 
-
-        // Bind use cases to lifecycle
-        // If Android Studio complains about "this" being not a LifecycleOwner
-        // try rebuilding the project or updating the appcompat dependency to
-        // version 1.1.0 or higher.
-        CameraX.bindToLifecycle(this, preview, imageCapture, videoCapture)
+        }, ContextCompat.getMainExecutor(this))
     }
 
-    private fun updateTransform() {
-        val matrix = Matrix()
 
-        // Compute the center of the view finder
-        val centerX = view_finder.width / 2f
-        val centerY = view_finder.height / 2f
+    private fun takePhoto() {
+        // Get a stable reference of the modifiable image capture use case
+        val imageCapture = imageCapture ?: return
 
-        // Correct preview output to account for display rotation
-        val rotationDegrees = when(view_finder.display.rotation) {
-            Surface.ROTATION_0 -> 0
-            Surface.ROTATION_90 -> 90
-            Surface.ROTATION_180 -> 180
-            Surface.ROTATION_270 -> 270
-            else -> return
-        }
-        matrix.postRotate(-rotationDegrees.toFloat(), centerX, centerY)
-
-        when (view_finder.display.rotation) {
-            Surface.ROTATION_90, Surface.ROTATION_270 -> matrix.postScale(16f / 9, 9f / 16, centerX, centerY)
+        // Create time stamped name and MediaStore entry.
+        val name = SimpleDateFormat(FILENAME_FORMAT, resources.configuration.locales[0])
+            .format(System.currentTimeMillis())
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+            if(Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/CameraX-Image")
+            }
         }
 
-        /*val size = Point()
-        view_finder.display.getSize(size)
-        val minScale = min(view_finder.width / size.x.toFloat(), view_finder.height / size.y.toFloat())
-        matrix.postScale(minScale, minScale, centerX, centerY)*/
+        // Create output options object which contains file + metadata
+        val outputOptions = ImageCapture.OutputFileOptions
+            .Builder(contentResolver,
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                contentValues)
+            .build()
 
-        // Finally, apply transformations to our TextureView
-        view_finder.setTransform(matrix)
+        // Set up image capture listener, which is triggered after photo has
+        // been taken
+        imageCapture.takePicture(
+            outputOptions,
+            ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onError(exc: ImageCaptureException) {
+                    Log.e(TAG, "Photo capture failed: ${exc.message}", exc)
+                }
+
+                override fun
+                        onImageSaved(output: ImageCapture.OutputFileResults) {
+                    confirmShoot()
+                    val msg = "Photo capture succeeded: ${output.savedUri}"
+                    Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
+                    Log.d(TAG, msg)
+                }
+            }
+        )
+    }
+
+    private fun captureVideo() {
+        val videoCapture = this.videoCapture ?: return
+
+        val curRecording = recording
+        if (curRecording != null) {
+            // Stop the current recording session.
+            curRecording.stop()
+            recording = null
+            recEnd()
+            return
+        }
+
+        recStart()
+
+        // create and start a new recording session
+        val name = SimpleDateFormat(FILENAME_FORMAT, Locale.US)
+            .format(System.currentTimeMillis())
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+            if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
+                put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/CameraX-Video")
+            }
+        }
+
+        val mediaStoreOutputOptions = MediaStoreOutputOptions
+            .Builder(contentResolver, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+            .setContentValues(contentValues)
+            .build()
+        recording = videoCapture.output
+            .prepareRecording(this, mediaStoreOutputOptions)
+            .apply {
+                if (PermissionChecker.checkSelfPermission(this@FullscreenActivity,
+                        Manifest.permission.RECORD_AUDIO) ==
+                    PermissionChecker.PERMISSION_GRANTED)
+                {
+                    withAudioEnabled()
+                }
+            }
+            .start(ContextCompat.getMainExecutor(this)) { recordEvent ->
+                when(recordEvent) {
+                    is VideoRecordEvent.Start -> {
+                        /*binding.videoCaptureButton.apply {
+                            text = getString(R.string.stop_capture)
+                            isEnabled = true
+                        }*/
+                    }
+                    is VideoRecordEvent.Finalize -> {
+                        if (!recordEvent.hasError()) {
+                            buzz(success = true)
+                            val msg = "Video capture succeeded: " +
+                                    "${recordEvent.outputResults.outputUri}"
+                            Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT)
+                                .show()
+                            Log.d(TAG, msg)
+                        } else {
+                            buzz(success = false)
+                            recording?.close()
+                            recording = null
+                            Log.e(TAG, "Video capture ends with error: " +
+                                    "${recordEvent.error}")
+                        }
+                        /*binding.videoCaptureButton.apply {
+                            text = getString(R.string.start_capture)
+                            isEnabled = true
+                        }*/
+                    }
+                }
+            }
     }
 
     private fun toggleCameraLensFacing() {
-        val newLensFacing = if (CameraX.LensFacing.FRONT == lensFacing) {
-            CameraX.LensFacing.BACK
+        lensFacing = if (CameraSelector.LENS_FACING_FRONT == lensFacing && hasBackCamera()) {
+            CameraSelector.LENS_FACING_BACK
         } else {
-            CameraX.LensFacing.FRONT
+            CameraSelector.LENS_FACING_FRONT
         }
-        if (CameraX.hasCameraWithLensFacing(newLensFacing)) {
-            lensFacing = newLensFacing
-
-            view_finder.post {
-                CameraX.unbindAll()
-                startCamera()
-            }
+        // Re-bind use cases to update selected camera
+        if (recording != null) {
+            recording?.pause()
+            cameraProvider?.unbindAll()
+            cameraProvider?.bindToLifecycle(this, cameraSelector, preview, imageCapture, videoCapture)
+            recording?.resume()
+        } else {
+            cameraProvider?.unbindAll()
+            cameraProvider?.bindToLifecycle(this, cameraSelector, preview, imageCapture, videoCapture)
         }
     }
 
+    private fun hasBackCamera(): Boolean {
+        return cameraProvider?.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) ?: false
+    }
+
     private fun confirmShoot() {
-        shoot_confirmation.post {
-            ObjectAnimator.ofFloat(shoot_confirmation, View.ALPHA, 0f, 1f, 0.66f, 0.33f, 0f).apply {
+        binding.shootConfirmation.post {
+            ObjectAnimator.ofFloat(binding.shootConfirmation, View.ALPHA, 0f, 1f, 0.66f, 0.33f, 0f).apply {
                 duration = 200
                 addListener(object: AnimatorListenerAdapter() {
-                    override fun onAnimationStart(animation: Animator?) {
-                        shoot_confirmation.visibility = View.VISIBLE
+                    override fun onAnimationStart(animation: Animator) {
+                        binding.shootConfirmation.visibility = View.VISIBLE
                     }
-                    override fun onAnimationEnd(animation: Animator?) {
-                        shoot_confirmation.visibility = View.INVISIBLE
+                    override fun onAnimationEnd(animation: Animator) {
+                        binding.shootConfirmation.visibility = View.INVISIBLE
                     }
                 })
                 start()
@@ -312,15 +376,13 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
     }
 
     private fun recStart() {
-        isRecording = true
-        switch_button.isEnabled = false
-        switch_button.alpha = 0.5f
+        binding.switchButton.isEnabled = false
+        binding.switchButton.alpha = 0.5f
     }
 
     private fun recEnd() {
-        isRecording = false
-        switch_button.isEnabled = true
-        switch_button.alpha = 1f
+        binding.switchButton.isEnabled = true
+        binding.switchButton.alpha = 1f
     }
 
     private fun buzz(success: Boolean) {
@@ -346,13 +408,15 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
         requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         if (requestCode == REQUEST_CODE_PERMISSIONS) {
             if (allPermissionsGranted()) {
-                view_finder.post { startCamera() }
+                binding.viewFinder.post { startCamera() }
             } else {
                 Toast.makeText(this,
                     "Permissions not granted by the user.",
                     Toast.LENGTH_SHORT).show()
                 finish()
             }
+        } else {
+            super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         }
     }
 
@@ -362,6 +426,11 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(
             baseContext, it) == PackageManager.PERMISSION_GRANTED
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        cameraExecutor.shutdown()
     }
 
     companion object {
@@ -385,7 +454,18 @@ class FullscreenActivity : AppCompatActivity(), LifecycleOwner {
 
         private const val REQUEST_CODE_PERMISSIONS = 10
 
-        // This is an array of all the permission specified in the manifest
-        private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+        private const val TAG = "ProtesterCamMain"
+
+        private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
+
+        private val REQUIRED_PERMISSIONS =
+            mutableListOf (
+                Manifest.permission.CAMERA,
+                Manifest.permission.RECORD_AUDIO
+            ).apply {
+                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+                    add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                }
+            }.toTypedArray()
     }
 }
